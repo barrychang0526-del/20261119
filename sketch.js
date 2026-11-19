@@ -1,9 +1,11 @@
 
-let characterSprite; // 角色一站立精靈圖
-let walkSprite; // 角色一走路精靈圖
-let magicSprite; // 角色一施法精靈圖
-let magicEffectSprite; // 魔法特效精靈圖
+let characterSprite;
+let walkSprite;
+let magicSprite;
+let magicEffectSprite;
+let bgImage;
 
+// 角色狀態
 let characterX;
 let isWalking = false;
 let facingDirection = 1;
@@ -13,172 +15,272 @@ let magicDirection = 1;
 let spaceIsDown = false;
 let activeEffects = [];
 
-// 站立動畫
+// 背景攝影機
+let cameraX = 0;
+let backgroundWidth = 0;
+let worldWidth = 0;
+
+const backgroundCount = 3;
+
+// 動畫影格設定
 const frameCountInSprite = 10;
 const frameWidth = 139.5;
 const frameHeight = 196;
 
-// 走路動畫
 const walkFrameCount = 9;
-const walkFrameWidth = 1246 / walkFrameCount;
+const walkFrameWidth = 1246 / 9;
 const walkFrameHeight = 198;
 
-// 施法動畫
 const magicFrameCount = 4;
-const magicFrameWidth = 1039 / magicFrameCount;
+const magicFrameWidth = 1039 / 4;
 const magicFrameHeight = 146;
 
-// 魔法特效
 const effectFrameCount = 5;
-const effectFrameWidth = 740 / effectFrameCount;
+const effectFrameWidth = 740 / 5;
 const effectFrameHeight = 19;
 
-// 動畫播放速度
 const framesPerStep = 8;
 
+// ==================================
 // 載入圖片
+// ==================================
+
 function preload() {
+  bgImage = loadImage("bg/bg1.png");
+
   characterSprite = loadImage("1/stop/stop.png");
   walkSprite = loadImage("1/walk/walk.png");
   magicSprite = loadImage("1/magic/magic.png");
-  magicEffectSprite = loadImage("1/magic_effect/magic_effect.png");
+
+  magicEffectSprite = loadImage(
+    "1/magic_effect/magic_effect.png"
+  );
 }
 
-// 初始化畫布
+// ==================================
+// 初始化
+// ==================================
+
 function setup() {
   createCanvas(windowWidth, windowHeight);
   imageMode(CENTER);
-
-  // 角色初始位置在畫布寬度的 2/3
-  characterX = (width * 2) / 3;
-
   frameRate(60);
+
+  backgroundWidth = width;
+  worldWidth = backgroundWidth * backgroundCount;
+
+  // 初始顯示中間背景
+  cameraX = backgroundWidth;
+
+  // 角色位於畫面 2/3
+  characterX = cameraX + width * 2 / 3;
 }
 
+// ==================================
 // 主程式
-function draw() {
-  background("#87CEEB");
+// ==================================
 
-  // 偵測左右方向鍵
+function draw() {
+  updateMovement();
+  updateCamera();
+
+  drawBackground();
+  drawCharacter();
+  drawMagicEffects();
+}
+
+// ==================================
+// 角色移動
+// ==================================
+
+function updateMovement() {
   const movingRight = keyIsDown(RIGHT_ARROW);
   const movingLeft = keyIsDown(LEFT_ARROW);
 
-  isWalking = movingRight || movingLeft;
+  isWalking = movingRight !== movingLeft;
 
-  // 角色移動速度
-  const movementStep = constrain(width * 0.004, 2, 8);
+  const movementStep = constrain(
+    width * 0.004,
+    2,
+    8
+  );
 
-  if (movingRight) {
-    isWalking = true;
+  // 取得角色目前動畫的原始尺寸
+  const currentFrameWidth = isCasting
+    ? magicFrameWidth
+    : isWalking
+    ? walkFrameWidth
+    : frameWidth;
+
+  const currentFrameHeight = isCasting
+    ? magicFrameHeight
+    : isWalking
+    ? walkFrameHeight
+    : frameHeight;
+
+  // 角色高度固定為畫布 1/3
+  const characterHeight = height / 3;
+
+  // 寬度依照原始比例縮放
+  const characterWidth =
+    currentFrameWidth *
+    (characterHeight / currentFrameHeight);
+
+  // 向右移動
+  if (movingRight && !movingLeft) {
     facingDirection = 1;
     characterX += movementStep;
-  } else if (movingLeft) {
-    isWalking = true;
+  }
+
+  // 向左移動
+  if (movingLeft && !movingRight) {
     facingDirection = -1;
     characterX -= movementStep;
   }
 
-  // ==================================
-  // 角色一尺寸設定
-  // 高度固定為整個畫布的 1/3
-  // 寬度依照圖片原始比例自動調整
-  // ==================================
+  // 限制角色不能離開地圖
+  characterX = constrain(
+    characterX,
+    characterWidth / 2,
+    max(characterWidth / 2, worldWidth - characterWidth / 2)
+  );
+}
 
+// ==================================
+// 攝影機跟隨角色
+// ==================================
+
+function updateCamera() {
+  // 角色在畫面中的固定位置
+  const anchorX = width * 2 / 3;
+
+  // 攝影機跟隨角色
+  const targetCameraX = characterX - anchorX;
+
+  // 攝影機只能在三張背景範圍內移動
+  cameraX = constrain(
+    targetCameraX,
+    0,
+    worldWidth - width
+  );
+}
+
+// ==================================
+// 繪製三張背景
+// ==================================
+
+function drawBackground() {
+  push();
+
+  imageMode(CORNER);
+
+  for (let i = 0; i < backgroundCount; i++) {
+    const bgX = i * backgroundWidth - cameraX;
+
+    image(
+      bgImage,
+      bgX,
+      0,
+      backgroundWidth,
+      height
+    );
+  }
+
+  pop();
+}
+
+// ==================================
+// 繪製角色
+// ==================================
+
+function drawCharacter() {
   const targetCharacterHeight = height / 3;
 
-  // 判斷施法動畫是否結束
+  // 施法結束判斷
   if (
     isCasting &&
     frameCount - magicStartFrame >=
-      magicFrameCount * framesPerStep
+    magicFrameCount * framesPerStep
   ) {
     isCasting = false;
 
-    const effectStartWidth =
-      frameWidth * (targetCharacterHeight / frameHeight);
+    const baseWidth =
+      frameWidth *
+      (targetCharacterHeight / frameHeight);
 
     activeEffects.push({
-      x: characterX + magicDirection * effectStartWidth / 2,
-      y: height - targetCharacterHeight * 0.58,
+      x: characterX +
+        magicDirection * baseWidth / 2,
+
+      y: height -
+        targetCharacterHeight * 0.58,
+
       direction: magicDirection
     });
   }
 
-  // 選擇目前角色動畫
+  // 選擇動畫
   const activeSprite = isCasting
     ? magicSprite
     : isWalking
     ? walkSprite
     : characterSprite;
 
-  // 取得目前動畫影格數
   const activeFrameCount = isCasting
     ? magicFrameCount
     : isWalking
     ? walkFrameCount
     : frameCountInSprite;
 
-  // 取得目前動畫圖片寬度
   const activeFrameWidth = isCasting
     ? magicFrameWidth
     : isWalking
     ? walkFrameWidth
     : frameWidth;
 
-  // 取得目前動畫圖片高度
   const activeFrameHeight = isCasting
     ? magicFrameHeight
     : isWalking
     ? walkFrameHeight
     : frameHeight;
 
-  // ==================================
-  // 等比例縮放角色
-  // ==================================
-
-  // 根據目前圖片高度計算縮放比例
+  // 固定高度，保持原始比例
   const characterScale =
     targetCharacterHeight / activeFrameHeight;
 
-  // 根據原始寬高比例計算顯示寬度
   const activeWidth =
     activeFrameWidth * characterScale;
 
-  // 顯示高度固定為畫布高度的 1/3
-  const activeHeight = targetCharacterHeight;
+  const activeHeight =
+    targetCharacterHeight;
 
-  // 防止角色超出畫布左右邊界
-  characterX = constrain(
-    characterX,
-    activeWidth / 2,
-    max(activeWidth / 2, width - activeWidth / 2)
-  );
-
-  // ==================================
   // 計算動畫影格
-  // ==================================
-
   const elapsedMagicFrames =
     frameCount - magicStartFrame;
 
   const frameIndex = isCasting
-    ? floor(elapsedMagicFrames / framesPerStep)
-    : floor(frameCount / framesPerStep) % activeFrameCount;
+    ? min(
+        magicFrameCount - 1,
+        floor(elapsedMagicFrames / framesPerStep)
+      )
+    : floor(frameCount / framesPerStep) %
+      activeFrameCount;
 
-  const sourceX = frameIndex * activeFrameWidth;
+  const sourceX =
+    frameIndex * activeFrameWidth;
 
-  // 角色底部對齊畫布底部
-  const characterY = height - activeHeight / 2;
+  // 角色的螢幕位置
+  const screenX = characterX - cameraX;
 
-  // ==================================
-  // 繪製角色
-  // ==================================
+  // 底部對齊畫布
+  const characterY =
+    height - activeHeight / 2;
 
   push();
 
-  translate(characterX, characterY);
+  translate(screenX, characterY);
 
-  // 依照移動方向翻轉角色
+  // 左右翻轉
   scale(
     isCasting ? magicDirection : facingDirection,
     1
@@ -197,10 +299,14 @@ function draw() {
   );
 
   pop();
+}
 
-  // ==================================
-  // 魔法特效設定
-  // ==================================
+// ==================================
+// 魔法特效
+// ==================================
+
+function drawMagicEffects() {
+  const targetCharacterHeight = height / 3;
 
   const effectScale =
     targetCharacterHeight / frameHeight;
@@ -211,32 +317,34 @@ function draw() {
   const effectHeight =
     effectFrameHeight * effectScale;
 
-  const effectSpeed = max(6, width * 0.008);
+  const effectSpeed = max(
+    6,
+    width * 0.008
+  );
 
-  // 更新魔法特效
   for (
-    let effectIndex = activeEffects.length - 1;
-    effectIndex >= 0;
-    effectIndex--
+    let i = activeEffects.length - 1;
+    i >= 0;
+    i--
   ) {
-    const effect = activeEffects[effectIndex];
+    const effect = activeEffects[i];
 
-    // 魔法依照方向飛行
     effect.x += effect.direction * effectSpeed;
 
-    // 魔法飛出畫布後移除
-    if (effect.x > width || effect.x < 0) {
-      activeEffects.splice(effectIndex, 1);
+    if (effect.x > worldWidth || effect.x < 0) {
+      activeEffects.splice(i, 1);
       continue;
     }
 
-    // 計算魔法特效影格
+    const screenX = effect.x - cameraX;
+
     const effectFrameIndex =
-      floor(frameCount / framesPerStep) % effectFrameCount;
+      floor(frameCount / framesPerStep) %
+      effectFrameCount;
 
     push();
 
-    translate(effect.x, effect.y);
+    translate(screenX, effect.y);
 
     scale(effect.direction, 1);
 
@@ -257,21 +365,16 @@ function draw() {
 }
 
 // ==================================
-// 鍵盤控制
+// 鍵盤按下
 // ==================================
 
 function keyPressed() {
-
-  // 向右移動
   if (keyCode === RIGHT_ARROW) {
-    isWalking = true;
     facingDirection = 1;
     return false;
   }
 
-  // 向左移動
   if (keyCode === LEFT_ARROW) {
-    isWalking = true;
     facingDirection = -1;
     return false;
   }
@@ -289,7 +392,10 @@ function keyPressed() {
   }
 }
 
-// 放開按鍵
+// ==================================
+// 鍵盤放開
+// ==================================
+
 function keyReleased() {
   if (keyCode === 32) {
     spaceIsDown = false;
@@ -297,15 +403,30 @@ function keyReleased() {
 }
 
 // ==================================
-// 視窗大小改變時自動調整
+// 視窗大小改變
 // ==================================
 
 function windowResized() {
+  const oldWorldWidth = worldWidth;
+
+  const characterProgress =
+    oldWorldWidth > 0
+      ? characterX / oldWorldWidth
+      : 0.5;
+
   resizeCanvas(windowWidth, windowHeight);
 
+  backgroundWidth = width;
+  worldWidth = backgroundWidth * backgroundCount;
+
   characterX = constrain(
-    characterX,
-    1,
-    width - 1
+    characterProgress * worldWidth,
+    0,
+    worldWidth
   );
+
+  // 重新計算攝影機位置
+  updateCamera();
+
+  activeEffects = [];
 }
